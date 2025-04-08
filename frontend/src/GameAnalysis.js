@@ -11,6 +11,10 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 
 function GameAnalysis({ username }) {
@@ -33,17 +37,16 @@ function GameAnalysis({ username }) {
           return res.json();
         })
         .then((data) => {
-          console.log('Fetched history:', data);
           const entry = data.history.find((h) => h.id === analysisId);
           if (entry) {
             setPgn(entry.pgn);
             if (entry.analysis.length > 0) {
               setAnalysis(entry.analysis);
-              setCurrentMove(entry.last_viewed_move || 0);
-              setSelectedFEN(entry.analysis[entry.last_viewed_move || 0]?.board_fen || null);
-              setComment(entry.comments?.[entry.last_viewed_move || 0] || '');
+              const lastMove = entry.last_viewed_move || 0;
+              setCurrentMove(lastMove);
+              setSelectedFEN(entry.analysis[lastMove]?.board_fen || null);
+              setComment(entry.comments?.[lastMove] || '');
             } else {
-              // Trigger analysis if not already analyzed
               handleAnalyze(null, entry.pgn);
             }
           } else {
@@ -116,7 +119,7 @@ function GameAnalysis({ username }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ last_viewed_move: moveIndex }),
-      });
+      }).catch((err) => console.error('Failed to update last viewed:', err));
     }
   };
 
@@ -131,7 +134,7 @@ function GameAnalysis({ username }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ last_viewed_move: newMove }),
-        });
+        }).catch((err) => console.error('Failed to update last viewed:', err));
       }
     }
   };
@@ -140,7 +143,6 @@ function GameAnalysis({ username }) {
     if (analysisId && analysisId !== 'new') {
       const updatedComments = analysis.comments ? [...analysis.comments] : new Array(analysis.length).fill('');
       updatedComments[currentMove] = comment;
-      const updatedAnalysis = { ...analysis, comments: updatedComments };
       await fetch(`http://localhost:5000/api/update-last-viewed/${analysisId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,15 +150,24 @@ function GameAnalysis({ username }) {
           last_viewed_move: currentMove,
           comments: updatedComments,
         }),
-      });
-      setAnalysis(updatedAnalysis);
+      }).catch((err) => console.error('Failed to save comment:', err));
+      setAnalysis((prev) => ({ ...prev, comments: updatedComments }));
     }
   };
 
+  // Custom move annotation function
+  const getMoveAnnotation = (moveIndex) => {
+    const evalDiff = Math.abs(analysis[moveIndex].evaluation - analysis[moveIndex].predicted_evaluation);
+    if (evalDiff > 2) return { symbol: '??', color: 'red', message: 'Blunder' };
+    if (evalDiff > 0.5) return { symbol: '?!', color: 'orange', message: 'Mistake' };
+    if (evalDiff < -0.5) return { symbol: '!!', color: 'green', message: 'Excellent' };
+    return { symbol: '', color: 'black', message: 'Normal' };
+  };
+
   return (
-    <Container sx={{ mt: 4 }}>
+    <Container sx={{ mt: 4, backgroundColor: '#2d2d2d', color: '#fff', padding: 2 }}>
       <Typography variant="h4" sx={{ fontFamily: 'Georgia, serif', mb: 2 }}>
-        Game Analysis
+        Game Review
       </Typography>
       {isLoading && <Typography>Loading...</Typography>}
       {!isLoading && (!analysisId || analysisId === 'new') && (
@@ -168,9 +179,9 @@ function GameAnalysis({ username }) {
             value={pgn}
             onChange={(e) => setPgn(e.target.value)}
             fullWidth
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, input: { color: '#fff' }, label: { color: '#fff' } }}
           />
-          <Button variant="contained" onClick={handleAnalyze} disabled={isLoading}>
+          <Button variant="contained" onClick={handleAnalyze} disabled={isLoading} sx={{ backgroundColor: '#4caf50', color: '#fff' }}>
             Analyze
           </Button>
         </Box>
@@ -183,59 +194,89 @@ function GameAnalysis({ username }) {
       {!isLoading && analysisId !== 'new' && analysis.length > 0 && (
         <Box sx={{ display: 'flex', gap: 4 }}>
           <Box sx={{ flex: 1 }}>
-            <Chessboard position={selectedFEN || analysis[0].board_fen} width={400} />
-            <Box sx={{ mt: 2 }}>
+            <Chessboard
+              position={selectedFEN || analysis[0].board_fen}
+              width={400}
+              customBoardStyle={{
+                borderRadius: '4px',
+                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+              }}
+              customSquareStyles={() => {
+                const styles = {};
+                if (analysis[currentMove].played_move) {
+                  const move = analysis[currentMove].played_move;
+                  const fromSquare = move.slice(0, 2);
+                  const toSquare = move.slice(2, 4);
+                  styles[fromSquare] = { backgroundColor: 'rgba(0, 255, 0, 0.4)' };
+                  styles[toSquare] = { backgroundColor: getMoveAnnotation(currentMove).color === 'red' ? 'rgba(255, 0, 0, 0.4)' : 'rgba(0, 255, 0, 0.4)' };
+                }
+                return styles;
+              }}
+            />
+            <Box sx={{ mt: 2, color: '#fff' }}>
               <Typography variant="h6">Move {currentMove + 1}</Typography>
               <Typography>Played: {analysis[currentMove].played_move}</Typography>
               <Typography>Evaluation: {analysis[currentMove].evaluation.toFixed(2)}</Typography>
               <Typography>Best Move: {analysis[currentMove].predicted_best_move}</Typography>
               <Typography>Best Eval: {analysis[currentMove].predicted_evaluation.toFixed(2)}</Typography>
-              <Typography>Comment: {analysis[currentMove].comment || 'No comment'}</Typography>
+              <Typography>
+                Annotation: {getMoveAnnotation(currentMove).symbol}{' '}
+                {getMoveAnnotation(currentMove).message}
+              </Typography>
               <TextField
                 label="Your Comment"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 fullWidth
-                sx={{ mt: 1 }}
+                sx={{ mt: 1, input: { color: '#fff' }, label: { color: '#fff' } }}
               />
               <Box sx={{ mt: 2 }}>
                 <Button
                   onClick={() => handleMoveChange('prev')}
                   disabled={currentMove === 0}
-                  sx={{ mr: 1 }}
+                  sx={{ mr: 1, backgroundColor: '#4caf50', color: '#fff' }}
                 >
                   Previous
                 </Button>
                 <Button
                   onClick={() => handleMoveChange('next')}
                   disabled={currentMove === analysis.length - 1}
-                  sx={{ mr: 1 }}
+                  sx={{ mr: 1, backgroundColor: '#4caf50', color: '#fff' }}
                 >
                   Next
                 </Button>
-                <Button onClick={handleCommentSave}>Save Comment</Button>
+                <Button onClick={handleCommentSave} sx={{ backgroundColor: '#4caf50', color: '#fff' }}>
+                  Save Comment
+                </Button>
               </Box>
             </Box>
           </Box>
           <Box sx={{ flex: 1, maxHeight: 500, overflowY: 'auto' }}>
-            <Typography variant="h6">Move List</Typography>
+            <Typography variant="h6" sx={{ color: '#fff' }}>Move List</Typography>
             <List>
-              {analysis.map((moveInfo, index) => (
-                <ListItem key={moveInfo.move_number} disablePadding>
-                  <ListItemButton onClick={() => handleMoveClick(index)}>
-                    <ListItemText
-                      primary={`Move ${moveInfo.move_number}: ${moveInfo.played_move}`}
-                      secondary={`Eval: ${moveInfo.evaluation.toFixed(2)}`}
-                      primaryTypographyProps={{ fontFamily: 'Arial, sans-serif', color: '#000' }}
-                      secondaryTypographyProps={{ color: '#333' }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              ))}
+              {analysis.map((moveInfo, index) => {
+                const annotation = getMoveAnnotation(index);
+                return (
+                  <ListItem key={moveInfo.move_number} disablePadding>
+                    <ListItemButton onClick={() => handleMoveClick(index)}>
+                      <ListItemText
+                        primary={`${moveInfo.move_number}. ${moveInfo.played_move} ${annotation.symbol}`}
+                        secondary={`Eval: ${moveInfo.evaluation.toFixed(2)}`}
+                        primaryTypographyProps={{ fontFamily: 'Arial, sans-serif', color: '#fff' }}
+                        secondaryTypographyProps={{ color: '#bbb' }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              })}
             </List>
           </Box>
         </Box>
       )}
+      {/* Placeholder for evaluation graph (to be implemented) */}
+      <Box sx={{ mt: 2, height: 50, backgroundColor: '#333', borderRadius: 4 }}>
+        <Typography sx={{ color: '#fff', textAlign: 'center' }}>Evaluation Graph (Coming Soon)</Typography>
+      </Box>
     </Container>
   );
 }

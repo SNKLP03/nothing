@@ -17,6 +17,10 @@ import {
   ListItemButton,
   ListItemText,
   CssBaseline,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
@@ -39,6 +43,7 @@ function Dashboard({ username }) {
   const [importError, setImportError] = useState('');
   const [analysisHistory, setAnalysisHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [openPopup, setOpenPopup] = useState(false);
 
   useEffect(() => {
     fetchAnalysisHistory();
@@ -49,8 +54,20 @@ function Dashboard({ username }) {
       const response = await fetch(`http://localhost:5000/api/analysis-history/${username}`);
       const data = await response.json();
       setAnalysisHistory(data.history || []);
-    } catch (error) {
+      if (data.history.length === 0) {
+        setOpenPopup(true);
+      }
+    }catch (error) {
       console.error('Error fetching analysis history:', error);
+    }
+  };
+
+  const handleGameAnalysisClick = () => {
+    if (analysisHistory.length > 0) {
+      const latestAnalysis = analysisHistory[0]; // Most recent analysis
+      navigate(`/analysis/${latestAnalysis.id}`);
+    } else {
+      setOpenPopup(true); // Show popup if no analysis exists
     }
   };
 
@@ -118,68 +135,78 @@ function Dashboard({ username }) {
             Welcome, {username}!
           </Typography>
           <Grid container spacing={3}>
-            <Grid item xs={12} md={8}>
-              <StyledCard sx={{ height: 400, display: 'flex', flexDirection: 'column' }}>
-                <Box
-                  sx={{
-                    height: '60%',
-                    bgcolor: 'grey',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Typography variant="body1" sx={{ color: '#fff' }}>
-                    Image Placeholder
-                  </Typography>
-                </Box>
-                <CardContent>
-                  <Typography variant="h5" sx={{ fontFamily: 'Georgia, serif', color: '#000' }}>
-                    Game Analysis
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{ color: '#333', fontFamily: 'Arial, sans-serif', mt: 1 }}
-                  >
-                    Analyze your PGN files to improve your strategy.
-                  </Typography>
-                </CardContent>
-                <CardActions sx={{ justifyContent: 'center', mt: 'auto' }}>
-                  <Button component={Link} to="/analysis/new" sx={{ color: '#000' }}>
-                    Go
-                  </Button>
-                </CardActions>
-              </StyledCard>
-            </Grid>
+          <Grid item xs={12} md={8}>
+            <StyledCard sx={{ height: 400, display: 'flex', flexDirection: 'column' }}>
+              <Box
+                sx={{
+                  height: '60%',
+                  bgcolor: 'grey',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Typography variant="body1" sx={{ color: '#fff' }}>
+                  Image Placeholder
+                </Typography>
+              </Box>
+              <CardContent>
+                <Typography variant="h5" sx={{ fontFamily: 'Georgia, serif', color: '#000' }}>
+                  Game Analysis
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#333', fontFamily: 'Arial, sans-serif', mt: 1 }}>
+                  Analyze your PGN files to improve your strategy.
+                </Typography>
+              </CardContent>
+              <CardActions sx={{ justifyContent: 'center', mt: 'auto' }}>
+                <Button onClick={handleGameAnalysisClick} sx={{ color: '#000' }}>
+                  Go
+                </Button>
+              </CardActions>
+            </StyledCard>
+          </Grid>
+          <Dialog open={openPopup} onClose={() => setOpenPopup(false)}>
+            <DialogTitle>Welcome!</DialogTitle>
+            <DialogContent>
+              <Typography>
+                It looks like you haven’t analyzed any games yet. Please import games from the "Import Games" section first!
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setOpenPopup(false)} color="primary">
+                OK
+              </Button>
+            </DialogActions>
+          </Dialog>
 
-            <Grid item xs={12} md={4}>
-              <StyledCard sx={{ height: 400 }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ fontFamily: 'Georgia, serif', color: '#000' }}>
-                    Analysis History
-                  </Typography>
-                  <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
-                    <List>
-                      {analysisHistory.map((entry) => (
-                        <ListItem key={entry.id} disablePadding>
-                          <ListItemButton component={Link} to={`/analysis/${entry.id}`}>
-                            <ListItemText
-                              primary={`Game - ${new Date(entry.timestamp).toLocaleDateString()}`}
-                              primaryTypographyProps={{ fontFamily: 'Arial, sans-serif', color: '#333' }}
-                            />
-                          </ListItemButton>
-                        </ListItem>
-                      ))}
-                    </List>
-                  </Box>
-                </CardContent>
-                <CardActions sx={{ justifyContent: 'center' }}>
-                  <Button component={Link} to="history" sx={{ color: '#000' }}>
-                    Go
-                  </Button>
-                </CardActions>
-              </StyledCard>
-            </Grid>
+          <Grid item xs={12} md={4}>
+            <StyledCard sx={{ height: 400 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ fontFamily: 'Georgia, serif', color: '#000' }}>
+                  Analysis History
+                </Typography>
+                <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
+                  <List>
+                    {analysisHistory.map((entry) => (
+                      <ListItem key={entry.id} disablePadding>
+                        <ListItemButton onClick={() => navigate(`/analysis/${entry.id}`)}>
+                          <ListItemText
+                            primary={`Game - ${new Date(entry.timestamp).toLocaleDateString()}`}
+                            primaryTypographyProps={{ fontFamily: 'Arial, sans-serif', color: '#333' }}
+                          />
+                        </ListItemButton>
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              </CardContent>
+              <CardActions sx={{ justifyContent: 'center' }}>
+                <Button component={Link} to="history" sx={{ color: '#000' }}>
+                  Go
+                </Button>
+              </CardActions>
+            </StyledCard>
+          </Grid>
 
             <Grid item xs={12} md={8}>
               <StyledCard sx={{ height: 300 }}>

@@ -136,11 +136,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import chess
 import chess.pgn
 from io import StringIO
+from bson.objectid import ObjectId
 
 app = Flask(__name__)
 app.config["MONGO_URI"] = "mongodb://localhost:27017/chessAnalysis"
 app.config["SECRET_KEY"] = "{~DKvCX5dJ/j.r!k3~'DF?mY59k75]pN"
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 mongo = PyMongo(app)
 
 # Dummy evaluation function (replace with your ChessNN if available)
@@ -274,7 +275,7 @@ def update_last_viewed(analysis_id):
         update_data["comments"] = comments
     
     result = mongo.db.analysis_history.update_one(
-        {"_id": ObjectId(analysis_id)},
+        {"_id": ObjectId(analysis_id)},  # Use ObjectId here
         {"$set": update_data}
     )
     print('Updated analysis ID:', analysis_id, 'with', update_data)
