@@ -5,17 +5,15 @@ import {
   Box,
   Typography,
   Button,
-  TextField,
   Container,
   List,
   ListItem,
-  ListItemButton,
   ListItemText,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
+  TextField,
+  ListItemButton,
 } from '@mui/material';
+import { Line } from 'react-chartjs-2'; // Install Chart.js: npm install chart.js react-chartjs-2
+import Chart from 'chart.js/auto'; // Required for Chart.js
 
 function GameAnalysis({ username }) {
   const { analysisId } = useParams();
@@ -24,7 +22,6 @@ function GameAnalysis({ username }) {
   const [analysis, setAnalysis] = useState([]);
   const [currentMove, setCurrentMove] = useState(0);
   const [selectedFEN, setSelectedFEN] = useState(null);
-  const [comment, setComment] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -45,7 +42,6 @@ function GameAnalysis({ username }) {
               const lastMove = entry.last_viewed_move || 0;
               setCurrentMove(lastMove);
               setSelectedFEN(entry.analysis[lastMove]?.board_fen || null);
-              setComment(entry.comments?.[lastMove] || '');
             } else {
               handleAnalyze(null, entry.pgn);
             }
@@ -113,7 +109,6 @@ function GameAnalysis({ username }) {
   const handleMoveClick = (moveIndex) => {
     setCurrentMove(moveIndex);
     setSelectedFEN(analysis[moveIndex].board_fen);
-    setComment(analysis.comments?.[moveIndex] || '');
     if (analysisId && analysisId !== 'new') {
       fetch(`http://localhost:5000/api/update-last-viewed/${analysisId}`, {
         method: 'POST',
@@ -128,7 +123,6 @@ function GameAnalysis({ username }) {
     if (newMove >= 0 && newMove < analysis.length) {
       setCurrentMove(newMove);
       setSelectedFEN(analysis[newMove].board_fen);
-      setComment(analysis.comments?.[newMove] || '');
       if (analysisId && analysisId !== 'new') {
         fetch(`http://localhost:5000/api/update-last-viewed/${analysisId}`, {
           method: 'POST',
@@ -139,22 +133,6 @@ function GameAnalysis({ username }) {
     }
   };
 
-  const handleCommentSave = async () => {
-    if (analysisId && analysisId !== 'new') {
-      const updatedComments = analysis.comments ? [...analysis.comments] : new Array(analysis.length).fill('');
-      updatedComments[currentMove] = comment;
-      await fetch(`http://localhost:5000/api/update-last-viewed/${analysisId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          last_viewed_move: currentMove,
-          comments: updatedComments,
-        }),
-      }).catch((err) => console.error('Failed to save comment:', err));
-      setAnalysis((prev) => ({ ...prev, comments: updatedComments }));
-    }
-  };
-
   // Custom move annotation function
   const getMoveAnnotation = (moveIndex) => {
     const evalDiff = Math.abs(analysis[moveIndex].evaluation - analysis[moveIndex].predicted_evaluation);
@@ -162,6 +140,47 @@ function GameAnalysis({ username }) {
     if (evalDiff > 0.5) return { symbol: '?!', color: 'orange', message: 'Mistake' };
     if (evalDiff < -0.5) return { symbol: '!!', color: 'green', message: 'Excellent' };
     return { symbol: '', color: 'black', message: 'Normal' };
+  };
+
+  // Coach feedback function
+  const getCoachFeedback = (moveIndex) => {
+    const playedMove = analysis[moveIndex].played_move;
+    const bestMove = analysis[moveIndex].predicted_best_move;
+    const annotation = getMoveAnnotation(moveIndex);
+    if (playedMove !== bestMove) {
+      return {
+        message: `${annotation.message}: Your move (${playedMove}) was suboptimal. The best move was ${bestMove}, improving the position by ${Math.abs(analysis[moveIndex].evaluation - analysis[moveIndex].predicted_evaluation).toFixed(2)}.`,
+        showFollowUp: annotation.message === 'Blunder' || annotation.message === 'Mistake',
+      };
+    }
+    return {
+      message: `${annotation.message}: Great move with ${playedMove}! It maintains a solid position.`,
+      showFollowUp: false,
+    };
+  };
+
+  // Data for evaluation graph
+  const chartData = {
+    labels: analysis.map((_, index) => index + 1),
+    datasets: [
+      {
+        label: 'Evaluation',
+        data: analysis.map((move) => move.evaluation),
+        fill: false,
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        beginAtZero: true,
+      },
+    },
   };
 
   return (
@@ -181,7 +200,12 @@ function GameAnalysis({ username }) {
             fullWidth
             sx={{ mb: 2, input: { color: '#fff' }, label: { color: '#fff' } }}
           />
-          <Button variant="contained" onClick={handleAnalyze} disabled={isLoading} sx={{ backgroundColor: '#4caf50', color: '#fff' }}>
+          <Button
+            variant="contained"
+            onClick={handleAnalyze}
+            disabled={isLoading}
+            sx={{ backgroundColor: '#4caf50', color: '#fff' }}
+          >
             Analyze
           </Button>
         </Box>
@@ -208,7 +232,12 @@ function GameAnalysis({ username }) {
                   const fromSquare = move.slice(0, 2);
                   const toSquare = move.slice(2, 4);
                   styles[fromSquare] = { backgroundColor: 'rgba(0, 255, 0, 0.4)' };
-                  styles[toSquare] = { backgroundColor: getMoveAnnotation(currentMove).color === 'red' ? 'rgba(255, 0, 0, 0.4)' : 'rgba(0, 255, 0, 0.4)' };
+                  styles[toSquare] = {
+                    backgroundColor:
+                      getMoveAnnotation(currentMove).color === 'red'
+                        ? 'rgba(255, 0, 0, 0.4)'
+                        : 'rgba(0, 255, 0, 0.4)',
+                  };
                 }
                 return styles;
               }}
@@ -223,36 +252,12 @@ function GameAnalysis({ username }) {
                 Annotation: {getMoveAnnotation(currentMove).symbol}{' '}
                 {getMoveAnnotation(currentMove).message}
               </Typography>
-              <TextField
-                label="Your Comment"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                fullWidth
-                sx={{ mt: 1, input: { color: '#fff' }, label: { color: '#fff' } }}
-              />
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  onClick={() => handleMoveChange('prev')}
-                  disabled={currentMove === 0}
-                  sx={{ mr: 1, backgroundColor: '#4caf50', color: '#fff' }}
-                >
-                  Previous
-                </Button>
-                <Button
-                  onClick={() => handleMoveChange('next')}
-                  disabled={currentMove === analysis.length - 1}
-                  sx={{ mr: 1, backgroundColor: '#4caf50', color: '#fff' }}
-                >
-                  Next
-                </Button>
-                <Button onClick={handleCommentSave} sx={{ backgroundColor: '#4caf50', color: '#fff' }}>
-                  Save Comment
-                </Button>
-              </Box>
             </Box>
           </Box>
           <Box sx={{ flex: 1, maxHeight: 500, overflowY: 'auto' }}>
-            <Typography variant="h6" sx={{ color: '#fff' }}>Move List</Typography>
+            <Typography variant="h6" sx={{ color: '#fff' }}>
+              Move List
+            </Typography>
             <List>
               {analysis.map((moveInfo, index) => {
                 const annotation = getMoveAnnotation(index);
@@ -273,9 +278,53 @@ function GameAnalysis({ username }) {
           </Box>
         </Box>
       )}
-      {/* Placeholder for evaluation graph (to be implemented) */}
-      <Box sx={{ mt: 2, height: 50, backgroundColor: '#333', borderRadius: 4 }}>
-        <Typography sx={{ color: '#fff', textAlign: 'center' }}>Evaluation Graph (Coming Soon)</Typography>
+      {!isLoading && analysisId !== 'new' && analysis.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="h6" sx={{ color: '#fff', mb: 1 }}>
+            Coach Feedback
+          </Typography>
+          <Box
+            sx={{
+              backgroundColor: '#333',
+              padding: 2,
+              borderRadius: 4,
+              color: '#fff',
+            }}
+          >
+            <Typography>{getCoachFeedback(currentMove).message}</Typography>
+            {getCoachFeedback(currentMove).showFollowUp && (
+              <Button
+                variant="contained"
+                sx={{ mt: 1, backgroundColor: '#4caf50', color: '#fff' }}
+                onClick={() => alert('Follow-up analysis coming soon!')}
+              >
+                Show Follow-Up
+              </Button>
+            )}
+          </Box>
+        </Box>
+      )}
+      {!isLoading && analysisId !== 'new' && analysis.length > 0 && (
+        <Box sx={{ mt: 2, height: 150, backgroundColor: '#333', borderRadius: 4, padding: 1 }}>
+          <Typography sx={{ color: '#fff', textAlign: 'center', mb: 2 }}>Evaluation Graph</Typography>
+          <Line data={chartData} options={chartOptions} />
+        </Box>
+      )}
+      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
+        <Button
+          onClick={() => handleMoveChange('prev')}
+          disabled={currentMove === 0}
+          sx={{ backgroundColor: '#4caf50', color: '#fff' }}
+        >
+          Previous
+        </Button>
+        <Button
+          onClick={() => handleMoveChange('next')}
+          disabled={currentMove === analysis.length - 1}
+          sx={{ backgroundColor: '#4caf50', color: '#fff' }}
+        >
+          Next
+        </Button>
       </Box>
     </Container>
   );
